@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Content manager | Portfolio</title>
+<script>(function(){try{var t=localStorage.getItem('portfolio-theme');if(!t&&matchMedia('(prefers-color-scheme: dark)').matches)t='dark';if(t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}})();</script>
+<link rel="stylesheet" href="css/site.css">
+<script src="js/content.js"></script>
+<style>
+  .adm { display: grid; gap: 1.25rem; }
+  .adm-row { display: grid; grid-template-columns: 72px 1fr auto; gap: 1rem; align-items: center; padding: .75rem; }
+  .adm-row img, .adm-row .pdf-mini { width: 72px; height: 54px; object-fit: contain; background: #fff; border: 1px solid var(--line); border-radius: 4px; display: grid; place-items: center; font: 700 .75rem var(--font-code); color: var(--accent); }
+  .adm-row h3 { font-size: 1rem; margin: 0; }
+  .adm-row p { margin: 0; font-size: .85rem; color: var(--muted); overflow-wrap: anywhere; }
+  .adm-form { display: grid; gap: .9rem; grid-template-columns: 1fr 1fr; }
+  .adm-form .wide { grid-column: 1 / -1; }
+  @media (max-width: 640px) { .adm-form { grid-template-columns: 1fr; } .adm-row { grid-template-columns: 56px 1fr; } .adm-row .card-actions { grid-column: 1 / -1; } }
+  .bar { position: sticky; top: 0; z-index: 20; background: var(--bg); border-bottom: 1px solid var(--line); padding: .75rem 0; }
+  .bar .container { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; justify-content: space-between; }
+  #log { font: 500 .85rem var(--font-code); color: var(--muted); min-height: 1.4em; }
+</style>
+</head>
+<body>
+<div class="page-head"><div class="container">
+  <p class="crumbs"><a href="index.html">← Back to site</a></p>
+  <h1 style="font-size:clamp(2rem,5vw,3rem)">Content manager</h1>
+  <p>Add, edit, replace, and delete graphics, videos, certificates, and the CV. This site has no server, so changes are written to your site folder (Chrome / Edge) or downloaded for you to copy in.</p>
+  <div class="alert alert--err" role="note" style="margin:1rem 0 0"><strong>Not password protected.</strong> This page only edits files on your own computer, but do not upload <code>admin.html</code> to your public host.</div>
+</div></div>
+
+<div class="bar"><div class="container">
+  <div class="btn-row" style="margin:0">
+    <button class="btn btn--sm" id="pick" type="button">1. Connect site folder</button>
+    <button class="btn btn--sm" id="save" type="button">2. Save changes</button>
+  </div>
+  <div id="log" role="status" aria-live="polite">Not connected: Save will download files instead.</div>
+</div></div>
+
+<main class="section"><div class="container adm">
+  <div class="tabs" id="tabs" role="tablist">
+    <button class="tab is-active" data-t="graphics" type="button">Graphics</button>
+    <button class="tab" data-t="videos" type="button">Videos</button>
+    <button class="tab" data-t="certificates" type="button">Certificates</button>
+    <button class="tab" data-t="cv" type="button">CV</button>
+  </div>
+  <div id="panel"></div>
+</div></main>
+
+<script>
+(function () {
+  'use strict';
+  var M = JSON.parse(JSON.stringify(window.PORTFOLIO_MEDIA));
+  var tab = 'graphics', editing = null, dir = null, pending = {};   // pending: path -> File
+  var FOLDER = { graphics: 'assets/images', videos: 'assets/videos', certificates: 'assets/certificates', cv: 'assets/documents' };
+  var ACCEPT = { graphics: '.png,.jpg,.jpeg,.webp', videos: '.mp4,video/mp4', certificates: '.pdf,.png,.jpg,.jpeg', cv: '.pdf,application/pdf' };
+  var $ = function (id) { return document.getElementById(id); };
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function log(t) { $('log').textContent = t; }
+  function ext(f) { var m = /\.([a-z0-9]+)$/i.exec(f || ''); return m ? m[1].toLowerCase() : ''; }
+  function slug(n) { return n.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, ''); }
+  function previewUrl(path) { return pending[path] ? URL.createObjectURL(pending[path]) : path; }
+
+  function fileField(kind, id, label, current, accept) {
+    return '<div class="field wide"><label for="' + id + '">' + label + '</label>' +
+      '<input id="' + id + '" type="file" accept="' + accept + '">' +
+      '<p class="muted" style="margin:.3rem 0 0;font-size:.85rem">Current: <code id="' + id + '-cur">' + esc(current || 'none') + '</code></p></div>';
+  }
+
+  function listHtml(kind) {
+    var items = M[kind];
+    if (!items.length) return '<div class="empty"><p style="margin:0 auto">Nothing here yet.</p></div>';
+    return items.map(function (it, i) {
+      var f = it.file, thumb = it.thumb || (ext(f) === 'pdf' ? '' : f);
+      return '<div class="card adm-row">' + (thumb ? '<img src="' + esc(previewUrl(thumb)) + '" alt="">' : '<span class="pdf-mini">PDF</span>') +
+        '<div><h3>' + esc(it.title) + '</h3><p>' + esc(it.category || it.issuer || '') + (it.date ? ' · ' + esc(it.date) : '') + '</p><p>' + esc(f) + '</p></div>' +
+        '<div class="card-actions" style="margin:0;padding:0"><button class="btn btn--sm btn--ghost" data-edit="' + i + '" type="button">Edit</button>' +
+        '<button class="btn btn--sm btn--ghost" data-del="' + i + '" type="button">Delete</button></div></div>';
+    }).join('');
+  }
+
+  function formHtml(kind) {
+    var it = editing !== null && editing >= 0 ? M[kind][editing] : {};
+    var h = '<form class="card card-body adm-form" id="form" novalidate><h2 class="wide" style="font-size:1.25rem;margin:0">' + (editing >= 0 && editing !== null ? 'Edit' : 'Add') + ' ' + kind.slice(0, -1) + '</h2>' +
+      '<div class="field wide"><label for="f-title">Title</label><input id="f-title" required value="' + esc(it.title) + '"></div>';
+    if (kind === 'graphics') {
+      h += '<div class="field"><label for="f-cat">Category</label><select id="f-cat">' + M.graphicCategories.map(function (c) { return '<option' + (c === it.category ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><label for="f-year">Year (optional)</label><input id="f-year" value="' + esc(it.year) + '"></div>';
+    } else if (kind === 'videos') {
+      h += '<div class="field wide"><label for="f-year">Year (optional)</label><input id="f-year" value="' + esc(it.year) + '"></div>';
+    } else {
+      h += '<div class="field"><label for="f-issuer">Issuing organization</label><input id="f-issuer" value="' + esc(it.issuer) + '"></div>' +
+        '<div class="field"><label for="f-date">Date</label><input id="f-date" value="' + esc(it.date) + '"></div>';
+    }
+    if (kind !== 'certificates') h += '<div class="field wide"><label for="f-desc">Description</label><textarea id="f-desc" style="min-height:90px">' + esc(it.description) + '</textarea></div>';
+    h += fileField(kind, 'f-file', (kind === 'videos' ? 'MP4 video file' : kind === 'certificates' ? 'Certificate file (PDF, PNG, JPG, JPEG)' : 'Image file (PNG, JPG, JPEG, WEBP)') + (editing >= 0 && editing !== null ? ': leave empty to keep the current file' : ''), it.file, ACCEPT[kind]);
+    if (kind === 'videos') h += fileField(kind, 'f-thumb', 'Thumbnail image (optional)', it.poster, '.png,.jpg,.jpeg,.webp');
+    if (kind === 'certificates') h += fileField(kind, 'f-thumb', 'Thumbnail image (optional, recommended for PDFs)', it.thumb, '.png,.jpg,.jpeg,.webp');
+    h += '<div class="wide btn-row" style="margin:0"><button class="btn" type="submit">' + (editing >= 0 && editing !== null ? 'Update' : 'Add') + '</button>' +
+      '<button class="btn btn--ghost" type="button" id="cancel">Cancel</button></div></form>';
+    return h;
+  }
+
+  function cvHtml() {
+    return '<form class="card card-body adm-form" id="cvform"><h2 class="wide" style="font-size:1.25rem;margin:0">CV (PDF)</h2>' +
+      '<p class="wide muted" style="margin:0">Current path: <code>' + esc(M.cv.file) + '</code>. Uploading replaces the file at that path, so visitors always get the newest CV.</p>' +
+      fileField('cv', 'f-cv', 'Replace CV (PDF only)', M.cv.file, ACCEPT.cv) +
+      '<div class="field"><label for="f-dl">Download file name</label><input id="f-dl" value="' + esc(M.cv.downloadName) + '"></div>' +
+      '<div class="field"><label for="f-up">Last updated (optional)</label><input id="f-up" value="' + esc(M.cv.updated) + '"></div>' +
+      '<div class="wide"><button class="btn" type="submit">Apply</button></div></form>';
+  }
+
+  function draw() {
+    [].forEach.call(document.querySelectorAll('#tabs .tab'), function (t) { t.classList.toggle('is-active', t.getAttribute('data-t') === tab); });
+    if (tab === 'cv') { $('panel').innerHTML = cvHtml(); return; }
+    $('panel').innerHTML = (editing === null
+      ? '<div class="btn-row" style="margin:0 0 1rem"><button class="btn btn--sm" id="add" type="button">+ Add ' + tab.slice(0, -1) + '</button></div>'
+      : formHtml(tab)) + '<div class="adm" style="margin-top:1rem">' + listHtml(tab) + '</div>';
+  }
+
+  function stage(inputId, kind, wantExt) {
+    var f = $(inputId) && $(inputId).files[0];
+    if (!f) return null;
+    var e = ext(f.name);
+    if (wantExt.indexOf(e) === -1) { alert('Unsupported file type ".' + e + '". Allowed: ' + wantExt.join(', ')); throw new Error('type'); }
+    var path = FOLDER[kind] + '/' + slug(f.name);
+    pending[path] = f;
+    return path;
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t.closest('#tabs .tab')) { tab = t.closest('.tab').getAttribute('data-t'); editing = null; draw(); }
+    else if (t.id === 'add') { editing = -1; draw(); }
+    else if (t.id === 'cancel') { editing = null; draw(); }
+    else if (t.hasAttribute('data-edit')) { editing = +t.getAttribute('data-edit'); draw(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+    else if (t.hasAttribute('data-del')) {
+      var i = +t.getAttribute('data-del');
+      if (confirm('Delete "' + M[tab][i].title + '" from the site? (The file itself stays on disk.)')) { M[tab].splice(i, 1); draw(); log('Deleted. Press Save to apply.'); }
+    }
+  });
+
+  document.addEventListener('submit', function (e) {
+    e.preventDefault();
+    try {
+      if (e.target.id === 'cvform') {
+        var p = stage('f-cv', 'cv', ['pdf']);
+        if (p) { M.cv.file = p; }
+        M.cv.downloadName = $('f-dl').value.trim() || 'CV.pdf';
+        M.cv.updated = $('f-up').value.trim();
+        draw(); log('CV updated. Press Save to apply.'); return;
+      }
+      var title = $('f-title').value.trim();
+      if (!title) { alert('Title is required.'); return; }
+      var isNew = editing === -1, it = isNew ? { id: tab[0] + Date.now().toString(36) } : M[tab][editing];
+      it.title = title;
+      var allowed = tab === 'videos' ? ['mp4'] : tab === 'certificates' ? ['pdf', 'png', 'jpg', 'jpeg'] : ['png', 'jpg', 'jpeg', 'webp'];
+      var file = stage('f-file', tab, allowed);
+      if (file) it.file = file;
+      if (!it.file) { alert('Please choose a file.'); return; }
+      if (tab === 'graphics') { it.category = $('f-cat').value; it.year = $('f-year').value.trim(); it.description = $('f-desc').value.trim(); }
+      if (tab === 'videos') {
+        it.year = $('f-year').value.trim(); it.description = $('f-desc').value.trim();
+        var th = stage('f-thumb', 'videos', ['png', 'jpg', 'jpeg', 'webp']); if (th) it.poster = th;
+      }
+      if (tab === 'certificates') {
+        it.issuer = $('f-issuer').value.trim(); it.date = $('f-date').value.trim();
+        var tc = stage('f-thumb', 'certificates', ['png', 'jpg', 'jpeg', 'webp']); if (tc) it.thumb = tc;
+      }
+      if (isNew) M[tab].push(it);
+      editing = null; draw(); log((isNew ? 'Added' : 'Updated') + '. Press Save to apply.');
+    } catch (err) { /* validation already alerted */ }
+  });
+
+  function toJs() {
+    var out = M, header = '/* Generated by admin.html. You can still edit this file by hand. */\n';
+    return header + 'window.PORTFOLIO_MEDIA = ' + JSON.stringify(out, null, 2) + ';\n';
+  }
+  function download(name, blob) { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000); }
+
+  async function writeTo(root, path, data) {
+    var parts = path.split('/'), d = root;
+    for (var i = 0; i < parts.length - 1; i++) d = await d.getDirectoryHandle(parts[i], { create: true });
+    var fh = await d.getFileHandle(parts[parts.length - 1], { create: true });
+    var w = await fh.createWritable(); await w.write(data); await w.close();
+  }
+
+  $('pick').addEventListener('click', async function () {
+    if (!window.showDirectoryPicker) { alert('Direct saving needs Chrome or Edge on desktop. In other browsers, Save will download the files for you to copy into the site folder.'); return; }
+    try {
+      dir = await window.showDirectoryPicker({ mode: 'readwrite' });
+      try { await dir.getFileHandle('index.html'); await dir.getDirectoryHandle('js'); }
+      catch (e) { dir = null; alert('That does not look like the site folder (index.html and js/ not found). Choose the folder that contains index.html.'); return; }
+      log('Connected to "' + dir.name + '". Save will write files directly.');
+    } catch (e) { /* cancelled */ }
+  });
+
+  $('save').addEventListener('click', async function () {
+    var paths = Object.keys(pending), js = toJs();
+    if (dir) {
+      try {
+        for (var i = 0; i < paths.length; i++) await writeTo(dir, paths[i], pending[paths[i]]);
+        await writeTo(dir, 'js/content.js', js);
+        pending = {}; log('Saved ' + paths.length + ' file(s) and js/content.js. Reload the site to see changes.');
+      } catch (err) { log('Save failed: ' + err.message); alert('Could not write to the folder: ' + err.message); }
+      return;
+    }
+    download('content.js', new Blob([js], { type: 'text/javascript' }));
+    paths.forEach(function (p, i) { setTimeout(function () { download(p.split('/').pop(), pending[p]); }, 300 * (i + 1)); });
+    log('Downloaded content.js' + (paths.length ? ' + ' + paths.length + ' file(s).' : '.') + ' Copy content.js to js/ and each file to its folder: ' + paths.join(', '));
+  });
+
+  draw();
+})();
+</script>
+</body>
+</html>
